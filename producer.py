@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
         message["transaction_id"] = str(i)
         message["transaction_region"] = str(np.random.choice(region))
-        message["transaction_size"] = str(np.random.randint(1000))
+        message["transaction_size"] = np.random.randint(100)
         message["transaction_datetime"] = event_datetime.strftime("%Y-%m-%d %H:%M:%S")
 
         print("Message to be sent: ", message)
