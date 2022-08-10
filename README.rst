@@ -11,3 +11,5 @@ Kafka Python client
     :target: https://travis-ci.org/dpkp/kafka-python
 .. image:: https://img.shields.io/badge/license-Apache%202-blue.svg
     :target: https://github.com/dpkp/kafka-python/blob/master/LICENSE
+.. image:: https://img.shields.io/badge/numpy-%23013243.svg?style=for-the-badge&logo=numpy&logoColor=white
+    :target: https://pypi.org/project/numpy/
