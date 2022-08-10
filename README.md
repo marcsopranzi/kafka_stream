@@ -9,3 +9,12 @@
 ## Project Focus
 
 The project focus is to provide a test environemnt already running and with compatible versions of Spark, Kafka and Cassandra. While the Kafka producer does generate dummy data this could be easily adapted to plug in to a real API using [Apache Nifi](https://nifi.apache.org/), [AWS Glue](https://aws.amazon.com/glue/)
+
+## Requirements.
+To be able to run this code you need to have installed Docker, Spark 3.0.0 and Python 3.10.
+
+## Instalation
+Once you cloned the repo you can execute the "setup_env" and this will install you the needed dependencies to run the project locally.
+
+## Notes
+Kafka and Cassandra come available as a Docker images and can be launched with `docker-compose -d`. After a moment if you run `docker ps` you should see 3 containers running: Cassandra, Zookeeper and Bootstrap server. To create your own topics and database you can just loging to the kafka container and crea a topic, you can find notes on how to quikly get started with this [Kafka guide](https://kafka.apache.org/quickstart). The Cassandra image can be logged in with user name and password both `cassandra`.
