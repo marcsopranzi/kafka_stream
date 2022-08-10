@@ -3,9 +3,12 @@ from datetime import datetime
 import time
 from json import dumps
 import numpy as np
+from config import parameters
 
-KAFKA_TOPIC_NAME = 'log-topic'
-KAFKA_BOOTSTRAP_SERVER = 'localhost:9092'
+print(type(parameters))
+
+KAFKA_TOPIC_NAME = parameters["KAFKA_TOPIC_NAME"]
+KAFKA_BOOTSTRAP_SERVER = parameters["KAFKA_BOOTSTRAP_SERVER"]
 
 if __name__ == "__main__":
     print("Program started... ")

@@ -6,20 +6,19 @@
 # create table logs_keyspace.logs_table (ingestion_id text primary key, log_id text ,log_region text ,log_size int ,log_datetime text ,ingestion_time timestamp);
 
 from pyspark.sql import SparkSession
-# from pyspark import SparkConf, SparkContextSQLContext
-
+#
 from pyspark.sql.types import *
 import pyspark.sql.functions as fn
-
 import uuid
+from config import parameters
 
-TOPIC_NAME = 'log-topic'
-KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'
+TOPIC_NAME = parameters["KAFKA_TOPIC_NAME"]
+KAFKA_BOOTSTRAP_SERVERS = parameters["KAFKA_BOOTSTRAP_SERVER"]
 
-cassandra_connection_host = "localhost"
-cassandra_connection_port = "9042"
-cassandra_keyspace_name = "logs_keyspace"
-cassandra_table_name = "logs_table"
+cassandra_connection_host = parameters["cassandra_connection_host"]
+cassandra_connection_port = parameters["cassandra_connection_port"]
+cassandra_keyspace_name = parameters["cassandra_keyspace_name"]
+cassandra_table_name = parameters["cassandra_table_name"]
 
 
 def write_to_cassandra(current_df, batch_id):
@@ -32,6 +31,8 @@ def write_to_cassandra(current_df, batch_id):
         .option("keyspace", cassandra_keyspace_name) \
         .option("table", cassandra_table_name) \
         .save()
+
+
 
 if __name__ == "__main__":
     print("Ingestion Started...")
@@ -64,38 +65,38 @@ if __name__ == "__main__":
         select(fn.from_json(fn.col("value"), schema).
                alias("logs_json"))
 
-    uuidUdf= fn.udf(lambda : str(uuid.uuid4()),StringType())     
-    
-    logs_df_3 = logs_df_2.select('logs_json.*').withColumn("ingestion_id", uuidUdf()).withColumn("ingestion_time", fn.current_timestamp())
+    uuidUdf = fn.udf(lambda: str(uuid.uuid4()), StringType())
 
+    logs_df_3 = logs_df_2.select('logs_json.*').withColumn(
+        "ingestion_id", uuidUdf()).withColumn("ingestion_time", fn.current_timestamp())
 
-    logs_df_4 = logs_df_3.select(["ingestion_id", 
-                                    'log_id',
-                                    'log_region', 
-                                    'log_size', 
-                                    'log_datetime', 
-                                    'ingestion_time'])
+    logs_df_4 = logs_df_3.select(["ingestion_id",
+                                  'log_id',
+                                  'log_region',
+                                  'log_size',
+                                  'log_datetime',
+                                  'ingestion_time'])
 
     logs_stream_df = logs_df_4.writeStream \
         .trigger(processingTime='5 seconds') \
         .outputMode("update") \
         .option("truncate", "false")\
         .format("console") \
-        .start()  
-
-    logs_df_4.writeStream \
-      .trigger(processingTime='5 seconds') \
-      .format("json") \
-      .option("path", "data/json/trans_detail_raw_data") \
-      .option("checkpointLocation", "data/checkpoint/trans_detail_raw_data") \
-      .start()
-    
-    logs_df_4.printSchema()
+        .start()
 
     logs_df_4.writeStream \
         .trigger(processingTime='5 seconds') \
-        .outputMode("update") \
-        .foreachBatch(write_to_cassandra) \
-        .start()    
-    
+        .format("json") \
+        .option("path", "data/json/trans_detail_raw_data") \
+        .option("checkpointLocation", "data/checkpoint/trans_detail_raw_data") \
+        .start()
+
+    logs_df_4.printSchema()
+
+    # logs_df_4.writeStream \
+    #     .trigger(processingTime='5 seconds') \
+    #     .outputMode("update") \
+    #     .foreachBatch(write_to_cassandra) \
+    #     .start()
+
     logs_stream_df.awaitTermination()
