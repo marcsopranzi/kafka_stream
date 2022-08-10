@@ -4,13 +4,13 @@ import time
 from json import dumps
 import numpy as np
 
-KAFKA_TOPIC_NAME_CONS = 'test'
-KAFKA_BOOTSTRAP_SERVERS_CONS = 'localhost:9092'
+KAFKA_TOPIC_NAME = 'log-topic'
+KAFKA_BOOTSTRAP_SERVER = 'localhost:9092'
 
 if __name__ == "__main__":
-    print("Kafka Producer Application Started ... ")
+    print("Program started... ")
 
-    kafka_producer_obj = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS_CONS,
+    kafka_producer_obj = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVER,
                              value_serializer=lambda x: dumps(x).encode('utf-8'))
 
     region = ["USA", "EMEA", "LATAM", "ASIA"]
@@ -19,15 +19,13 @@ if __name__ == "__main__":
     for i in range(500):
         i = i + 1
         message = {}
-        print("Sending message to Kafka topic: " + str(i))
-        event_datetime = datetime.now()
 
-        message["transaction_id"] = str(i)
-        message["transaction_region"] = str(np.random.choice(region))
-        message["transaction_size"] = np.random.randint(100)
-        message["transaction_datetime"] = event_datetime.strftime("%Y-%m-%d %H:%M:%S")
-
-        print("Message to be sent: ", message)
-        kafka_producer_obj.send(KAFKA_TOPIC_NAME_CONS, message)
+        message["log_id"] = str(i)
+        message["log_region"] = str(np.random.choice(region))
+        message["log_size"] = np.random.randint(100)
+        message["log_datetime"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        kafka_producer_obj.send(KAFKA_TOPIC_NAME, message)
+        print("Message sent: ", message)
         time.sleep(1)
-print("Kafka Producer Application Completed. ")
+
+print("Finished.")
