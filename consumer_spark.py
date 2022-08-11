@@ -1,5 +1,5 @@
 # spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.0.0,com.datastax.spark:spark-cassandra-connector_2.12:3.0.0 consumer_spark.py
-# kafka-topics --create --zookeeper localhost:2181 --partitions 1 --replication-factor 1 --topic logs-topic
+# kafka-topics --create --zookeeper localhost:2181 --partitions 1 --replication-factor 1 --topic logs-topic2
 # cqlsh -u cassandra -p cassandra
 # create keyspace logs_keyspace with replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
 # use logs_keyspace;
@@ -87,16 +87,16 @@ if __name__ == "__main__":
     logs_df_4.writeStream \
         .trigger(processingTime='5 seconds') \
         .format("json") \
-        .option("path", "data/json/trans_detail_raw_data") \
-        .option("checkpointLocation", "data/checkpoint/trans_detail_raw_data") \
+        .option("path", "data/json/logs") \
+        .option("checkpointLocation", "data/checkpoint/logs") \
         .start()
 
     logs_df_4.printSchema()
 
-    # logs_df_4.writeStream \
-    #     .trigger(processingTime='5 seconds') \
-    #     .outputMode("update") \
-    #     .foreachBatch(write_to_cassandra) \
-    #     .start()
+    logs_df_4.writeStream \
+        .trigger(processingTime='5 seconds') \
+        .outputMode("update") \
+        .foreachBatch(write_to_cassandra) \
+        .start()
 
     logs_stream_df.awaitTermination()
