@@ -5,8 +5,6 @@ from json import dumps
 import numpy as np
 from config import parameters
 
-print(type(parameters))
-
 KAFKA_TOPIC_NAME = parameters["KAFKA_TOPIC_NAME"]
 KAFKA_BOOTSTRAP_SERVER = parameters["KAFKA_BOOTSTRAP_SERVER"]
 

@@ -1,12 +1,4 @@
-# spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.0.0,com.datastax.spark:spark-cassandra-connector_2.12:3.0.0 consumer_spark.py
-# kafka-topics --create --zookeeper localhost:2181 --partitions 1 --replication-factor 1 --topic logs-topic2
-# cqlsh -u cassandra -p cassandra
-# create keyspace logs_keyspace with replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
-# use logs_keyspace;
-# create table logs_keyspace.logs_table (ingestion_id text primary key, log_id text ,log_region text ,log_size int ,log_datetime text ,ingestion_time timestamp);
-
 from pyspark.sql import SparkSession
-#
 from pyspark.sql.types import *
 import pyspark.sql.functions as fn
 import uuid
@@ -22,7 +14,6 @@ cassandra_table_name = parameters["cassandra_table_name"]
 
 
 def write_to_cassandra(current_df, batch_id):
-
     current_df.write \
         .format("org.apache.spark.sql.cassandra") \
         .mode("append") \
@@ -31,8 +22,6 @@ def write_to_cassandra(current_df, batch_id):
         .option("keyspace", cassandra_keyspace_name) \
         .option("table", cassandra_table_name) \
         .save()
-
-
 
 if __name__ == "__main__":
     print("Ingestion Started...")
