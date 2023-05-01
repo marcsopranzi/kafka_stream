@@ -13,7 +13,7 @@ echo "Activating venv"
 source ./venv_kafka_stream/bin/activate
 
 echo "Install dependencies"
-pip install numpy kafka-python dash pymongo[srv]
+pip install numpy kafka-python
 
 echo "Pip upgrade"
 ppython3 -m pip install --upgrade pip

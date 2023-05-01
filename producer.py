@@ -9,7 +9,8 @@ KAFKA_TOPIC_NAME = parameters["KAFKA_TOPIC_NAME"]
 KAFKA_BOOTSTRAP_SERVER = parameters["KAFKA_BOOTSTRAP_SERVER"]
 
 if __name__ == "__main__":
-    print("Program started... ")
+    st = time.time()
+    print("Program started... @ ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     kafka_producer_obj = KafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVER,
                              value_serializer=lambda x: dumps(x).encode('utf-8'))
@@ -17,7 +18,7 @@ if __name__ == "__main__":
     region = ["USA", "EMEA", "LATAM", "ASIA"]
 
     message = None
-    for i in range(500):
+    for i in range(100000):
         i = i + 1
         message = {}
 
@@ -26,7 +27,8 @@ if __name__ == "__main__":
         message["log_size"] = np.random.randint(100)
         message["log_datetime"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         kafka_producer_obj.send(KAFKA_TOPIC_NAME, message)
-        print("Message sent: ", message)
-        time.sleep(1)
 
-print("Finished.")
+et = time.time()
+elapsed_time = et - st
+print('Execution time:', elapsed_time, 'seconds')
+print("Finished.", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
