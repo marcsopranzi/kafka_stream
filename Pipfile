@@ -6,6 +6,10 @@ name = "pypi"
 [packages]
 numpy = "*"
 kafka-python = "*"
+pytest = "*"
+magicmock = "*"
+mock = "*"
+pre-commit = "*"
 
 [dev-packages]
 
