@@ -29,6 +29,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from datetime import datetime, timezone
 
 import httpx
 from kafka import KafkaProducer
@@ -54,6 +55,8 @@ KAFKA_BOOTSTRAP_SERVERS: str = os.environ.get(
     "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
 )
 KAFKA_TOPIC: str = os.environ.get("KAFKA_TOPIC_NAME", "log-topic")
+# Dead Letter Queue topic — malformed SSE frames are routed here instead of discarded.
+KAFKA_DLQ_TOPIC: str = os.environ.get("KAFKA_DLQ_TOPIC", "log-topic-dlq")
 # Activity mode forwarded to the SSE stream — matches ACTIVITY_MODES in api/main.py.
 STREAM_MODE: str = os.environ.get("STREAM_MODE", "normal")
 # How long the SSE connection may be silent before we treat it as stale.
@@ -154,6 +157,56 @@ _circuit_breaker = CircuitBreaker()
 
 
 # ---------------------------------------------------------------------------
+# Dead Letter Queue
+# ---------------------------------------------------------------------------
+
+
+def _send_to_dlq(
+    kafka_producer: KafkaProducer,
+    raw_payload: str,
+    error_type: str,
+    error_message: str,
+) -> None:
+    """Route a malformed record to the Dead Letter Queue Kafka topic.
+
+    The DLQ record includes the original raw payload (truncated to 4 KiB to
+    avoid oversized messages) plus enough metadata for an ops team to triage
+    and replay the record.  DLQ send failures are logged but never re-raised
+    — losing a DLQ record is preferable to crashing the main stream.
+
+    Args:
+        kafka_producer: Shared :class:`kafka.KafkaProducer` instance.
+        raw_payload: The raw string that failed processing.
+        error_type: Exception class name (e.g. ``JSONDecodeError``).
+        error_message: Human-readable description of the failure.
+    """
+    dlq_record: dict[str, Any] = {
+        "raw_payload": raw_payload[:4096],  # guard against oversized frames
+        "error_type": error_type,
+        "error_message": error_message,
+        "source": "producer",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        kafka_producer.send(KAFKA_DLQ_TOPIC, dlq_record)
+        logger.warning(
+            "dlq_record_routed",
+            extra={
+                "dlq_topic": KAFKA_DLQ_TOPIC,
+                "error_type": error_type,
+                "payload_preview": raw_payload[:120],
+            },
+        )
+    except Exception as dlq_exc:
+        # DLQ itself failed — log only; do not raise to avoid masking the
+        # primary stream error or creating an infinite error loop.
+        logger.error(
+            "dlq_send_failed",
+            extra={"dlq_topic": KAFKA_DLQ_TOPIC, "error": str(dlq_exc)},
+        )
+
+
+# ---------------------------------------------------------------------------
 # SSE stream consumer
 # ---------------------------------------------------------------------------
 
@@ -215,10 +268,13 @@ def consume_stream(client: httpx.Client, kafka_producer: KafkaProducer) -> None:
                 try:
                     raw_event: dict[str, Any] = json.loads(line[len("data: "):])
                 except json.JSONDecodeError as exc:
-                    # Malformed frame — log and continue; DLQ handled in req §5.
-                    logger.error(
-                        "malformed_sse_frame",
-                        extra={"line": line[:200], "error": str(exc)},
+                    # Malformed SSE frame — route to DLQ so the record is not
+                    # silently lost and can be inspected or replayed by ops.
+                    _send_to_dlq(
+                        kafka_producer,
+                        raw_payload=line,
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
                     )
                     continue
 

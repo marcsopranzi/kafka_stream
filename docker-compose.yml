@@ -30,17 +30,19 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      # 9092 is exposed to the host for manual inspection (kafka-console-consumer, etc.)
-      - "9092:9092"
+      - "9092:9092"   # host machine (kafka-console-consumer, local tools)
+      - "9093:9093"   # Kubernetes pods via host.docker.internal:9093
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-      # Two listeners:
-      #   PLAINTEXT      — internal Docker network  (broker:29092)
+      # Three listeners — each advertises the address that its clients will use
+      # to reach the broker AFTER the initial connection:
+      #   PLAINTEXT      — Docker Compose internal  (broker:29092)
       #   PLAINTEXT_HOST — host machine             (localhost:9092)
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      #   PLAINTEXT_K8S  — Kubernetes pods          (host.docker.internal:9093)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT_K8S:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,PLAINTEXT_K8S://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092,PLAINTEXT_K8S://host.docker.internal:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
@@ -67,8 +69,14 @@ services:
           --bootstrap-server broker:29092 \
           --replication-factor 1 \
           --partitions 3 \
-          --topic log-topic
-        echo "Topic log-topic ready."
+          --topic log-topic && \
+        kafka-topics --create \
+          --if-not-exists \
+          --bootstrap-server broker:29092 \
+          --replication-factor 1 \
+          --partitions 3 \
+          --topic log-topic-dlq && \
+        echo "Topics log-topic and log-topic-dlq ready."
 
   # --------------------------------------------------------------------------
   # Cassandra
@@ -123,6 +131,7 @@ services:
       API_BASE_URL: http://api:8000
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
       KAFKA_TOPIC_NAME: log-topic
+      KAFKA_DLQ_TOPIC: log-topic-dlq
       STREAM_MODE: normal
       STREAM_READ_TIMEOUT_SECONDS: "30"
       CB_FAILURE_THRESHOLD: "5"

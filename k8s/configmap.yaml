@@ -10,8 +10,12 @@ data:
   # On Docker Desktop (Mac/Windows): host.docker.internal resolves to the host.
   # On Linux with kind/minikube: replace with the host bridge IP (e.g. 172.17.0.1)
   # In production: replace with the internal Kafka service DNS name.
-  KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9092"
+  # Port 9093 is the dedicated K8s listener — it advertises host.docker.internal:9093
+  # so metadata redirects resolve correctly from inside K8s pods.
+  # (9092 advertises localhost:9092 which would resolve to the pod itself, not the host.)
+  KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9093"
   KAFKA_TOPIC_NAME:         "log-topic"
+  KAFKA_DLQ_TOPIC:          "log-topic-dlq"
 
   # All replicas share this group ID so Kafka assigns disjoint partitions.
   # max useful replicas == topic partition count (currently 3).
@@ -26,11 +30,16 @@ data:
   CASSANDRA_PORT:     "9042"
   CASSANDRA_KEYSPACE: "logs_keyspace"
   CASSANDRA_TABLE:    "logs_table"
-  CASSANDRA_ENABLED:  "true"
+  # Cassandra runs in Docker Compose, not K8s — disable until a shared
+  # network or service mesh connects the two environments.
+  CASSANDRA_ENABLED:  "false"
 
   # ── Spark ──────────────────────────────────────────────────────────────────
   # /tmp is ephemeral in K8s — mount a PVC or use S3 (spark.hadoop.fs.s3a.*)
   # in production to survive pod restarts without reprocessing the full backlog.
-  CHECKPOINT_DIR:     "/tmp/spark-checkpoints"
+  # Mounted from spark-checkpoints PVC — survives pod restarts.
+  # Without this, every restart replays all Kafka history (expensive + OOM risk).
+  CHECKPOINT_DIR:     "/mnt/spark-checkpoints"
   JSON_OUTPUT_PATH:   "/tmp/spark-output/logs"
+  DLQ_OUTPUT_PATH:    "/tmp/spark-dlq/logs"
   TRIGGER_INTERVAL:   "5 seconds"

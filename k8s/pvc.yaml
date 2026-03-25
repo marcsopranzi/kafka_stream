@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: spark-checkpoints
+  namespace: kafka-stream
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # Uses the default StorageClass (hostPath on Docker Desktop, rancher.io/local-path on kind).
+  # In production specify a StorageClass backed by a network volume (EBS, GCE PD, etc.)
+  # so checkpoints survive node failure — not just pod failure.

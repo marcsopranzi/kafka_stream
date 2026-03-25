@@ -96,6 +96,7 @@ spark-build: ## Build the Spark consumer image (kafka-stream-spark:latest)
 
 k8s-apply: spark-build ## Build image and apply all K8s manifests
 	kubectl apply -f k8s/namespace.yaml
+	kubectl apply -f k8s/pvc.yaml
 	kubectl apply -f k8s/configmap.yaml
 	kubectl apply -f k8s/deployment.yaml
 	@echo "To enable autoscaling, also run: kubectl apply -f k8s/keda-scaledobject.yaml"

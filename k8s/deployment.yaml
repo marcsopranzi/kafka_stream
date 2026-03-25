@@ -16,11 +16,10 @@ spec:
       labels:
         app: spark-consumer
     spec:
-      # ── Security: run as non-root (matches bitnami/spark UID 1001)
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1001
-        fsGroup: 1001
+      # ── Security: apache/spark:3.5.0-python3 runs as root by default.
+      # For production harden this by switching to a non-root base image
+      # (e.g. eclipse-temurin) and managing the Spark installation yourself.
+      securityContext: {}
 
       containers:
         - name: spark-consumer
@@ -33,6 +32,13 @@ spec:
             - configMapRef:
                 name: spark-consumer-config
 
+          env:
+            # Cap the JVM driver heap below the container memory limit to leave
+            # headroom for Spark off-heap memory, Netty buffers, and the OS.
+            # Rule of thumb: driver.memory ≈ 60–70% of container memory limit.
+            - name: SPARK_DRIVER_MEMORY
+              value: "1200m"
+
           # Resource requests/limits are critical for the HPA to work correctly.
           # Tune based on your observed Spark micro-batch CPU/memory usage.
           resources:
@@ -43,16 +49,27 @@ spec:
               cpu: "2"
               memory: "2Gi"
 
+          volumeMounts:
+            - name: spark-checkpoints
+              mountPath: /mnt/spark-checkpoints
+
           # Liveness: restart the pod if the JVM crashes silently.
+          # initialDelaySeconds is generous — Spark JVM startup + Kafka metadata
+          # fetch can take 60–90 s on a cold Docker Desktop cluster.
           livenessProbe:
             exec:
               command:
                 - /bin/sh
                 - -c
                 - "ps aux | grep -v grep | grep -q spark-submit"
-            initialDelaySeconds: 60
+            initialDelaySeconds: 90
             periodSeconds: 30
-            failureThreshold: 3
+            failureThreshold: 5
+
+      volumes:
+        - name: spark-checkpoints
+          persistentVolumeClaim:
+            claimName: spark-checkpoints
 
       # Terminate pods quickly so KEDA scale-downs don't leave stale consumers.
       terminationGracePeriodSeconds: 30

@@ -1,39 +1,51 @@
 # Spark Structured Streaming consumer image.
 #
-# Base: apache/spark:3.5.0-python3 (official image, Java 17 + Spark 3.5 + Python 3)
-#
-# JARs are downloaded at first run via --packages (ivy2 cache at /root/.ivy2).
-# For production: bake JARs into the image to eliminate the Maven download on
-# every cold start — see comments in CMD below.
+# JARs are downloaded at BUILD time via curl — no Maven/ivy at pod startup.
+# This makes cold starts fast and removes the need for outbound Maven access
+# from inside the K8s pod.
 #
 # Build:  docker build -f Dockerfile.spark -t kafka-stream-spark:latest .
 # Run:    docker run --rm \
 #             -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 \
+#             -e CASSANDRA_ENABLED=false \
 #             kafka-stream-spark:latest
 
 FROM apache/spark:3.5.0-python3
 
 USER root
 
+# ── Bake Kafka connector JARs into the image ─────────────────────────────────
+# These are the four JARs required by spark-sql-kafka-0-10 (Spark 3.5 / Scala 2.12).
+# Downloading here avoids --packages and the ivy2 Maven resolution at runtime.
+
+ARG MAVEN=https://repo1.maven.org/maven2
+ARG SPARK_KAFKA_VER=3.5.0
+ARG KAFKA_CLIENTS_VER=3.4.1
+ARG COMMONS_POOL2_VER=2.11.1
+
+RUN curl -fsSL -o /opt/spark/jars/spark-sql-kafka-0-10_2.12-${SPARK_KAFKA_VER}.jar \
+        ${MAVEN}/org/apache/spark/spark-sql-kafka-0-10_2.12/${SPARK_KAFKA_VER}/spark-sql-kafka-0-10_2.12-${SPARK_KAFKA_VER}.jar \
+    && curl -fsSL -o /opt/spark/jars/spark-token-provider-kafka-0-10_2.12-${SPARK_KAFKA_VER}.jar \
+        ${MAVEN}/org/apache/spark/spark-token-provider-kafka-0-10_2.12/${SPARK_KAFKA_VER}/spark-token-provider-kafka-0-10_2.12-${SPARK_KAFKA_VER}.jar \
+    && curl -fsSL -o /opt/spark/jars/kafka-clients-${KAFKA_CLIENTS_VER}.jar \
+        ${MAVEN}/org/apache/kafka/kafka-clients/${KAFKA_CLIENTS_VER}/kafka-clients-${KAFKA_CLIENTS_VER}.jar \
+    && curl -fsSL -o /opt/spark/jars/commons-pool2-${COMMONS_POOL2_VER}.jar \
+        ${MAVEN}/org/apache/commons/commons-pool2/${COMMONS_POOL2_VER}/commons-pool2-${COMMONS_POOL2_VER}.jar
+
 WORKDIR /app
-
-# Copy only what the consumer needs — keeps the layer small.
 COPY consumer_spark.py config.py ./
-
-# Spark connector packages (resolved from Maven at first run).
-# To bake JARs into the image instead, download them here with curl into
-# /opt/spark/jars/ and remove --packages from CMD.
-ENV SPARK_PACKAGES="\
-org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,\
-com.datastax.spark:spark-cassandra-connector_2.12:3.5.0"
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
 
-CMD [ \
-    "/opt/spark/bin/spark-submit", \
-    "--master", "local[*]", \
-    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.datastax.spark:spark-cassandra-connector_2.12:3.5.0", \
-    "--conf", "spark.driver.bindAddress=0.0.0.0", \
-    "--conf", "spark.ui.enabled=false", \
-    "/app/consumer_spark.py" \
-]
+# No --packages: JARs are already on the classpath via /opt/spark/jars/
+# Shell-form CMD so ${SPARK_DRIVER_MEMORY} is expanded at container start.
+# SPARK_DRIVER_MEMORY is injected by K8s (deployment.yaml env section).
+# Default 1200m keeps the JVM heap below the 2Gi container limit, leaving
+# room for Spark off-heap, Netty buffers, and OS overhead.
+CMD /opt/spark/bin/spark-submit \
+    --master "local[*]" \
+    --driver-memory "${SPARK_DRIVER_MEMORY:-1200m}" \
+    --conf spark.driver.bindAddress=0.0.0.0 \
+    --conf spark.ui.enabled=false \
+    --conf spark.sql.shuffle.partitions=3 \
+    /app/consumer_spark.py

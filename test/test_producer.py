@@ -55,12 +55,11 @@ def test_circuit_does_not_open_before_threshold(cb: CircuitBreaker) -> None:
     assert cb.state is _CBState.CLOSED
 
 
-def test_open_circuit_raises_on_enter(cb: CircuitBreaker) -> None:
+def test_open_circuit_state_after_threshold(cb: CircuitBreaker) -> None:
+    """After threshold failures the circuit is OPEN (no context manager needed)."""
     for _ in range(cb.failure_threshold):
         cb._on_failure()
-    with pytest.raises(CircuitBreakerOpenError):
-        with cb:
-            pass  # Should never reach here.
+    assert cb.state is _CBState.OPEN
 
 
 # ---------------------------------------------------------------------------
@@ -111,24 +110,13 @@ def test_success_resets_failure_count(cb: CircuitBreaker) -> None:
 
 
 # ---------------------------------------------------------------------------
-# CircuitBreaker — context manager does not suppress exceptions
+# consume_stream — circuit breaker integration
 # ---------------------------------------------------------------------------
 
 
-def test_context_manager_does_not_suppress_exceptions(cb: CircuitBreaker) -> None:
-    with pytest.raises(ValueError):
-        with cb:
-            raise ValueError("boom")
-
-
-# ---------------------------------------------------------------------------
-# fetch_event — circuit breaker integration
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_event_raises_circuit_open_without_retry() -> None:
-    """CircuitBreakerOpenError must propagate without triggering tenacity retries."""
-    from producer.main import _circuit_breaker
+def test_consume_stream_raises_circuit_open_without_retry() -> None:
+    """CircuitBreakerOpenError must propagate immediately when circuit is OPEN."""
+    from producer.main import _circuit_breaker, consume_stream
 
     # Force the circuit open.
     original_state = _circuit_breaker._state
@@ -136,11 +124,11 @@ def test_fetch_event_raises_circuit_open_without_retry() -> None:
     _circuit_breaker._opened_at = time.monotonic()
 
     mock_client = MagicMock(spec=httpx.Client)
+    mock_kafka = MagicMock()
 
     try:
         with pytest.raises(CircuitBreakerOpenError):
-            from producer.main import fetch_event
-            fetch_event(mock_client)
+            consume_stream(mock_client, mock_kafka)
     finally:
         # Restore state so other tests are unaffected.
         _circuit_breaker._state = original_state

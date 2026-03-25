@@ -49,6 +49,8 @@ CASSANDRA_ENABLED: bool = os.environ.get("CASSANDRA_ENABLED", "true").lower() ==
 # /tmp is always writable in K8s pods; use a persistent volume or S3 in production.
 CHECKPOINT_DIR: str = os.environ.get("CHECKPOINT_DIR", "/tmp/spark-checkpoints")
 TRIGGER_INTERVAL: str = os.environ.get("TRIGGER_INTERVAL", "5 seconds")
+# DLQ output path for records that fail JSON schema parsing.
+DLQ_OUTPUT_PATH: str = os.environ.get("DLQ_OUTPUT_PATH", "/tmp/spark-dlq/logs")
 
 # ---------------------------------------------------------------------------
 # Schema
@@ -127,15 +129,27 @@ if __name__ == "__main__":
         .load()
     )
 
-    # Deserialise JSON and apply schema
-    parsed_df = (
-        raw_df.selectExpr("CAST(value AS STRING) AS json_value")
-        .select(fn.from_json(fn.col("json_value"), _SCHEMA).alias("data"))
-        .select("data.*")
+    # Deserialise JSON preserving the original string for DLQ attribution.
+    # PERMISSIVE mode (default): from_json returns NULL for the entire struct
+    # when the top-level JSON is unparseable — these rows are routed to the DLQ.
+    with_parsed = raw_df.selectExpr("CAST(value AS STRING) AS json_value").select(
+        fn.col("json_value"),
+        fn.from_json(fn.col("json_value"), _SCHEMA).alias("data"),
     )
 
+    # ── Dead Letter Queue split ───────────────────────────────────────────────
+    # data IS NULL  → from_json could not parse the JSON at all (structural error)
+    # data IS NOT NULL → well-formed record; proceed to enrichment
+    dlq_df = with_parsed.filter(fn.col("data").isNull()).select(
+        fn.col("json_value"),
+        fn.lit("json_schema_parse_failure").alias("dlq_reason"),
+        fn.current_timestamp().alias("dlq_timestamp"),
+    )
+
+    valid_df = with_parsed.filter(fn.col("data").isNotNull()).select("data.*")
+
     # Enrich with pipeline metadata
-    enriched_df = parsed_df.select(
+    enriched_df = valid_df.select(
         fn.expr("uuid()").alias("ingestion_id"),
         fn.col("log_id"),
         fn.col("log_region"),
@@ -179,6 +193,27 @@ if __name__ == "__main__":
         .format("json")
         .option("path", os.environ.get("JSON_OUTPUT_PATH", "/tmp/spark-output/logs"))
         .option("checkpointLocation", f"{CHECKPOINT_DIR}/json")
+        .start()
+    )
+
+    # ── Sink 4 (DLQ): console — makes DLQ records visible in pod logs
+    (
+        dlq_df.writeStream.trigger(processingTime=TRIGGER_INTERVAL)
+        .outputMode("update")
+        .option("truncate", "false")
+        .format("console")
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/dlq-console")
+        .start()
+    )
+
+    # ── Sink 5 (DLQ): JSON files — durable record for ops triage and replay
+    #    In production replace DLQ_OUTPUT_PATH with an S3 / GCS path monitored
+    #    by an alerting system.
+    (
+        dlq_df.writeStream.trigger(processingTime=TRIGGER_INTERVAL)
+        .format("json")
+        .option("path", DLQ_OUTPUT_PATH)
+        .option("checkpointLocation", f"{CHECKPOINT_DIR}/dlq-json")
         .start()
     )
 

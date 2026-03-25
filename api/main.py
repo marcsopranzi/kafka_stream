@@ -75,6 +75,7 @@ ACTIVITY_MODES: dict[str, tuple[float, float]] = {
     "flood":  (0.0,  0.0),    # maximum throughput — no sleep at all
 }
 DEFAULT_MODE: str = os.environ.get("API_DEFAULT_MODE", "normal")
+DEFAULT_MODE = "quite"
 # ===========================================================================
 # END ACTIVITY CONTROL
 # ===========================================================================
