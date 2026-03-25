@@ -1,0 +1,39 @@
+# Spark Structured Streaming consumer image.
+#
+# Base: apache/spark:3.5.0-python3 (official image, Java 17 + Spark 3.5 + Python 3)
+#
+# JARs are downloaded at first run via --packages (ivy2 cache at /root/.ivy2).
+# For production: bake JARs into the image to eliminate the Maven download on
+# every cold start — see comments in CMD below.
+#
+# Build:  docker build -f Dockerfile.spark -t kafka-stream-spark:latest .
+# Run:    docker run --rm \
+#             -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 \
+#             kafka-stream-spark:latest
+
+FROM apache/spark:3.5.0-python3
+
+USER root
+
+WORKDIR /app
+
+# Copy only what the consumer needs — keeps the layer small.
+COPY consumer_spark.py config.py ./
+
+# Spark connector packages (resolved from Maven at first run).
+# To bake JARs into the image instead, download them here with curl into
+# /opt/spark/jars/ and remove --packages from CMD.
+ENV SPARK_PACKAGES="\
+org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,\
+com.datastax.spark:spark-cassandra-connector_2.12:3.5.0"
+
+ENTRYPOINT ["/opt/entrypoint.sh"]
+
+CMD [ \
+    "/opt/spark/bin/spark-submit", \
+    "--master", "local[*]", \
+    "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,com.datastax.spark:spark-cassandra-connector_2.12:3.5.0", \
+    "--conf", "spark.driver.bindAddress=0.0.0.0", \
+    "--conf", "spark.ui.enabled=false", \
+    "/app/consumer_spark.py" \
+]

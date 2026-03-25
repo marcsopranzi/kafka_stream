@@ -257,6 +257,12 @@ def _build_kafka_producer() -> KafkaProducer:
         acks="all",
         retries=3,
         compression_type="gzip",
+        # Batching — critical for 1M+ message throughput.
+        # linger_ms: wait up to 10ms to fill a batch before sending.
+        # batch_size: max bytes per batch per partition (64KB).
+        # Without these, each message incurs a separate TCP round-trip.
+        linger_ms=10,
+        batch_size=65536,
     )
 
 

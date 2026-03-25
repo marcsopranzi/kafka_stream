@@ -25,6 +25,8 @@ COUNT ?= 1000
   api-up api-down api-restart \
   producer-up producer-down \
   build rebuild \
+  spark-build \
+  k8s-apply k8s-delete k8s-logs k8s-status k8s-scale \
   inject logs \
   install test lint format type-check pre-commit clean
 
@@ -70,6 +72,36 @@ build: ## Build (or rebuild) application images
 
 rebuild: ## Force a full rebuild with no layer cache
 	docker compose build --no-cache
+
+spark-build: ## Build the Spark consumer image (kafka-stream-spark:latest)
+	docker build -f Dockerfile.spark -t kafka-stream-spark:latest .
+
+# ── Kubernetes ────────────────────────────────────────────────────────────────
+# Requires: kubectl pointing at a running cluster (Docker Desktop K8s / kind)
+# For KEDA autoscaling also run:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+
+k8s-apply: spark-build ## Build image and apply all K8s manifests
+	kubectl apply -f k8s/namespace.yaml
+	kubectl apply -f k8s/configmap.yaml
+	kubectl apply -f k8s/deployment.yaml
+	@echo "To enable autoscaling, also run: kubectl apply -f k8s/keda-scaledobject.yaml"
+
+k8s-delete: ## Remove all K8s resources in the kafka-stream namespace
+	kubectl delete namespace kafka-stream --ignore-not-found
+
+k8s-logs: ## Tail logs from all running spark-consumer pods
+	kubectl logs -n kafka-stream -l app=spark-consumer --follow --max-log-requests=10
+
+k8s-status: ## Show pod and HPA/ScaledObject status
+	@echo "=== Pods ==="
+	kubectl get pods -n kafka-stream -o wide
+	@echo "\n=== ScaledObject ==="
+	kubectl get scaledobject -n kafka-stream 2>/dev/null || echo "(KEDA not installed)"
+
+k8s-scale: ## Manually scale spark-consumer (usage: make k8s-scale REPLICAS=2)
+	kubectl scale deployment spark-consumer -n kafka-stream --replicas=$(REPLICAS)
 
 # ── Observability ─────────────────────────────────────────────────────────────
 

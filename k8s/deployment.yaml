@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-consumer
+  namespace: kafka-stream
+  labels:
+    app: spark-consumer
+spec:
+  # Start with 1 replica; KEDA scales this up to the partition count (3).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-consumer
+  template:
+    metadata:
+      labels:
+        app: spark-consumer
+    spec:
+      # ── Security: run as non-root (matches bitnami/spark UID 1001)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+
+      containers:
+        - name: spark-consumer
+          # Build locally: make spark-build
+          # In CI/CD: replace with your registry image, e.g. ghcr.io/org/kafka-stream-spark:sha
+          image: kafka-stream-spark:latest
+          imagePullPolicy: IfNotPresent   # use local image for development
+
+          envFrom:
+            - configMapRef:
+                name: spark-consumer-config
+
+          # Resource requests/limits are critical for the HPA to work correctly.
+          # Tune based on your observed Spark micro-batch CPU/memory usage.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+
+          # Liveness: restart the pod if the JVM crashes silently.
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep -v grep | grep -q spark-submit"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+
+      # Terminate pods quickly so KEDA scale-downs don't leave stale consumers.
+      terminationGracePeriodSeconds: 30
+
+      restartPolicy: Always

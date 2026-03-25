@@ -1,0 +1,58 @@
+# KEDA ScaledObject — scales spark-consumer based on Kafka consumer group lag.
+#
+# Prerequisites:
+#   helm repo add kedacore https://kedacore.github.io/charts
+#   helm install keda kedacore/keda --namespace keda --create-namespace
+#
+# How it works:
+#   KEDA polls the Kafka consumer group "spark-consumer" every 30 s.
+#   If the sum of per-partition lag exceeds (lagThreshold × current replicas),
+#   it adds a replica. Scales back down when lag drops below the threshold.
+#
+#   With 3 partitions and lagThreshold=500:
+#     lag  <  500  → 1 replica   (normal pace, consumer keeps up)
+#     lag  < 1000  → 2 replicas  (falling behind)
+#     lag  < 1500  → 3 replicas  (heavy load / burst)
+#     lag >= 1500  → capped at 3 (= partition count; more replicas would idle)
+#
+# Adjust lagThreshold to tune how aggressively KEDA responds.
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: spark-consumer-scaledobject
+  namespace: kafka-stream
+spec:
+  scaleTargetRef:
+    name: spark-consumer
+
+  # Never scale below 1 (cold-start lag) or above the partition count.
+  minReplicaCount: 1
+  maxReplicaCount: 3
+
+  # How long to wait before scaling down after lag drops.
+  cooldownPeriod: 60
+
+  # How often KEDA checks lag (seconds).
+  pollingInterval: 30
+
+  triggers:
+    - type: kafka
+      metadata:
+        # Must match the bootstrap address in configmap.yaml.
+        bootstrapServers: "host.docker.internal:9092"
+
+        # Must match KAFKA_CONSUMER_GROUP in configmap.yaml.
+        consumerGroup: "spark-consumer"
+
+        topic: "log-topic"
+
+        # Scale up by 1 replica for every 500 messages of lag per partition.
+        # Lower this value for more aggressive / faster scale-out.
+        lagThreshold: "500"
+
+        # offsetResetPolicy controls what happens when the consumer group has
+        # no committed offsets (e.g. first deployment).
+        # "latest" means KEDA won't trigger a false-positive scale-up on
+        # first deploy before any messages exist.
+        offsetResetPolicy: "latest"

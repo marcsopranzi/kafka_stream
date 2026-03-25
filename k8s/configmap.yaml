@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-consumer-config
+  namespace: kafka-stream
+  labels:
+    app: spark-consumer
+data:
+  # ── Kafka ─────────────────────────────────────────────────────────────────
+  # On Docker Desktop (Mac/Windows): host.docker.internal resolves to the host.
+  # On Linux with kind/minikube: replace with the host bridge IP (e.g. 172.17.0.1)
+  # In production: replace with the internal Kafka service DNS name.
+  KAFKA_BOOTSTRAP_SERVERS: "host.docker.internal:9092"
+  KAFKA_TOPIC_NAME:         "log-topic"
+
+  # All replicas share this group ID so Kafka assigns disjoint partitions.
+  # max useful replicas == topic partition count (currently 3).
+  KAFKA_CONSUMER_GROUP:     "spark-consumer"
+
+  # earliest: process the full backlog on (re)start — safe because Spark
+  # checkpoints ensure idempotent replay.
+  KAFKA_STARTING_OFFSETS:   "earliest"
+
+  # ── Cassandra ──────────────────────────────────────────────────────────────
+  CASSANDRA_HOST:     "host.docker.internal"
+  CASSANDRA_PORT:     "9042"
+  CASSANDRA_KEYSPACE: "logs_keyspace"
+  CASSANDRA_TABLE:    "logs_table"
+  CASSANDRA_ENABLED:  "true"
+
+  # ── Spark ──────────────────────────────────────────────────────────────────
+  # /tmp is ephemeral in K8s — mount a PVC or use S3 (spark.hadoop.fs.s3a.*)
+  # in production to survive pod restarts without reprocessing the full backlog.
+  CHECKPOINT_DIR:     "/tmp/spark-checkpoints"
+  JSON_OUTPUT_PATH:   "/tmp/spark-output/logs"
+  TRIGGER_INTERVAL:   "5 seconds"
