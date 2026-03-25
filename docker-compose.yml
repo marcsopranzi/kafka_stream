@@ -120,8 +120,8 @@ services:
       API_BASE_URL: http://api:8000
       KAFKA_BOOTSTRAP_SERVERS: broker:29092
       KAFKA_TOPIC_NAME: log-topic
-      POLL_INTERVAL_SECONDS: "0.5"
-      REQUEST_TIMEOUT_SECONDS: "5.0"
+      STREAM_MODE: normal
+      STREAM_READ_TIMEOUT_SECONDS: "30"
       CB_FAILURE_THRESHOLD: "5"
       CB_RECOVERY_TIMEOUT_SECONDS: "30"
       # In production, inject this from a secrets manager (AWS Secrets Manager,
