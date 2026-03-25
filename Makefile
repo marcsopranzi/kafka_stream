@@ -1,19 +1,30 @@
 # =============================================================================
 # kafka-stream — top-level Makefile
 #
-# Docker targets pass MODE and COUNT through to docker-compose / the API.
+# Intentional startup order
+# ─────────────────────────
+#   1. make up          → ZooKeeper, Kafka, Cassandra, producer
+#                         Pipeline is live and waiting. Producer sits in
+#                         circuit-breaker state until the API comes up.
 #
-# Activity modes (passed as MODE=):
+#   2. make api-up [MODE=...]   → start the API; data starts flowing.
+#
+#   3. make api-down    → kill the API; producer backs off automatically.
+#      make api-up      → restart; producer reconnects within 30 s.
+#
+# Activity modes (passed as MODE= to api-up / api-restart):
 #   quiet   — 2–8 s between events   (sparse, realistic quiet period)
 #   normal  — 0.3–1.5 s              (default, moderate throughput)
 #   burst   — 0.02–0.2 s             (heavy load)
 #   flood   — 0 s                    (max throughput, no sleep)
 #
-# Examples:
-#   make up                        # full stack, normal mode
-#   make api-up MODE=flood         # restart API in flood mode
-#   make inject COUNT=50000        # burst 50 000 events into the stream
+# Quick reference:
+#   make up                        # start infra + producer (no API)
+#   make api-up MODE=flood         # open the tap in flood mode
+#   make api-down                  # close the tap
+#   make inject COUNT=50000        # burst 50 000 events through the running API
 #   make logs                      # tail producer + api logs
+#   make down                      # stop everything
 # =============================================================================
 
 MODE  ?= normal
@@ -30,20 +41,21 @@ COUNT ?= 1000
   inject logs \
   install test lint format type-check pre-commit clean
 
-# ── Full stack ────────────────────────────────────────────────────────────────
+# ── Pipeline (infra + producer, no API) ──────────────────────────────────────
 
-up: ## Start the entire stack (MODE=normal by default)
-	API_DEFAULT_MODE=$(MODE) docker compose up -d
+up: ## Start ZooKeeper, Kafka, Cassandra, and producer — API excluded intentionally.
+	## Data pipeline is live and waiting. Run `make api-up` when ready to open the tap.
+	docker compose up zookeeper broker kafka-init cassandra producer -d
 
-down: ## Stop and remove all containers
+down: ## Stop and remove all containers (including API if running)
 	docker compose down
 
-# ── Infrastructure only (Kafka + ZooKeeper + Cassandra) ──────────────────────
+# ── Infrastructure only (Kafka + ZooKeeper + Cassandra, no producer) ─────────
 
-infra-up: ## Start Kafka, ZooKeeper, and Cassandra only
+infra-up: ## Start Kafka, ZooKeeper, and Cassandra only (no producer, no API)
 	docker compose up zookeeper broker kafka-init cassandra -d
 
-infra-down: ## Stop infrastructure containers (leaves app containers running)
+infra-down: ## Stop infrastructure containers
 	docker compose stop zookeeper broker cassandra
 
 # ── API ───────────────────────────────────────────────────────────────────────
