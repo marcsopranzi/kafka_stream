@@ -23,6 +23,7 @@ Quick-start examples
     curl -N "http://localhost:8000/events?mode=flood"
 """
 import asyncio
+import os
 import random
 import uuid
 from collections import deque
@@ -73,7 +74,7 @@ ACTIVITY_MODES: dict[str, tuple[float, float]] = {
     "burst":  (0.02, 0.2),    # heavy load — rapid but still variable
     "flood":  (0.0,  0.0),    # maximum throughput — no sleep at all
 }
-DEFAULT_MODE: str = "normal"
+DEFAULT_MODE: str = os.environ.get("API_DEFAULT_MODE", "normal")
 # ===========================================================================
 # END ACTIVITY CONTROL
 # ===========================================================================

@@ -1,28 +1,110 @@
-.PHONY: install test lint format type-check pre-commit clean
+# =============================================================================
+# kafka-stream — top-level Makefile
+#
+# Docker targets pass MODE and COUNT through to docker-compose / the API.
+#
+# Activity modes (passed as MODE=):
+#   quiet   — 2–8 s between events   (sparse, realistic quiet period)
+#   normal  — 0.3–1.5 s              (default, moderate throughput)
+#   burst   — 0.02–0.2 s             (heavy load)
+#   flood   — 0 s                    (max throughput, no sleep)
+#
+# Examples:
+#   make up                        # full stack, normal mode
+#   make api-up MODE=flood         # restart API in flood mode
+#   make inject COUNT=50000        # burst 50 000 events into the stream
+#   make logs                      # tail producer + api logs
+# =============================================================================
 
-install:
+MODE  ?= normal
+COUNT ?= 1000
+
+.PHONY: \
+  up down \
+  infra-up infra-down \
+  api-up api-down api-restart \
+  producer-up producer-down \
+  build rebuild \
+  inject logs \
+  install test lint format type-check pre-commit clean
+
+# ── Full stack ────────────────────────────────────────────────────────────────
+
+up: ## Start the entire stack (MODE=normal by default)
+	API_DEFAULT_MODE=$(MODE) docker compose up -d
+
+down: ## Stop and remove all containers
+	docker compose down
+
+# ── Infrastructure only (Kafka + ZooKeeper + Cassandra) ──────────────────────
+
+infra-up: ## Start Kafka, ZooKeeper, and Cassandra only
+	docker compose up zookeeper broker kafka-init cassandra -d
+
+infra-down: ## Stop infrastructure containers (leaves app containers running)
+	docker compose stop zookeeper broker cassandra
+
+# ── API ───────────────────────────────────────────────────────────────────────
+
+api-up: ## Start (or restart) the API — pass MODE=quiet|normal|burst|flood
+	API_DEFAULT_MODE=$(MODE) docker compose up api -d
+
+api-down: ## Stop the API container (producer keeps running, will reconnect when API returns)
+	docker compose stop api
+
+api-restart: ## Restart the API with a new MODE without touching infra or producer
+	API_DEFAULT_MODE=$(MODE) docker compose up api --force-recreate -d
+
+# ── Producer ──────────────────────────────────────────────────────────────────
+
+producer-up: ## Start the producer
+	docker compose up producer -d
+
+producer-down: ## Stop the producer
+	docker compose stop producer
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+
+build: ## Build (or rebuild) application images
+	docker compose build
+
+rebuild: ## Force a full rebuild with no layer cache
+	docker compose build --no-cache
+
+# ── Observability ─────────────────────────────────────────────────────────────
+
+logs: ## Tail live logs from the producer and API
+	docker compose logs -f producer api
+
+inject: ## Burst COUNT events into the running stream (default COUNT=1000)
+	@echo "Injecting $(COUNT) events..."
+	@curl -s -X POST "http://localhost:8000/inject?count=$(COUNT)" | python3 -m json.tool
+
+# ── Local dev ─────────────────────────────────────────────────────────────────
+
+install: ## Install all dependencies (including dev) via uv
 	uv sync --all-groups
 
-test:
-	uv run pytest tests/ -v --cov=. --cov-report=term-missing
+test: ## Run the test suite with coverage
+	uv run pytest test/ -v --cov=. --cov-report=term-missing
 
-lint:
+lint: ## Check formatting and linting (non-destructive)
 	uv run ruff check .
 	uv run black --check .
 	uv run isort --check-only .
 
-format:
+format: ## Auto-fix formatting and lint issues
 	uv run black .
 	uv run isort .
 	uv run ruff check --fix .
 
-type-check:
+type-check: ## Run mypy strict type checking
 	uv run mypy .
 
-pre-commit:
+pre-commit: ## Run all pre-commit hooks against every file
 	uv run pre-commit run --all-files
 
-clean:
+clean: ## Remove all build artefacts and caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +

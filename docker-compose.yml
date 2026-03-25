@@ -100,6 +100,9 @@ services:
     command: uvicorn api.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
+    environment:
+      # Controlled via make api-up MODE=<quiet|normal|burst|flood>
+      API_DEFAULT_MODE: ${API_DEFAULT_MODE:-normal}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 5s
